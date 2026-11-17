@@ -88,7 +88,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
       <button class="pill opt" id="flip">Flip camera</button>
     </div>
   </div>
-  <div id="result"><video id="rv" controls playsinline></video>
+  <div id="result"><div id="note" style="color:#ffd7d5;font-size:.9rem;text-align:center"></div><video id="rv" controls playsinline></video>
     <div class="btns"><button class="pill main" id="share">Save video</button><button class="pill" id="again">Record again</button><button class="pill" id="done">Edit script</button></div></div>
 </section>
 
@@ -98,7 +98,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   var script=$("script"),speed=$("speed"),size=$("size"),mirror=$("mirror"),count3=$("count3"),go=$("go");
   var stage=$("stage"),view=$("view"),text=$("text"),cam=$("cam"),rec=$("rec"),count=$("count"),msg=$("msg");
   var speed2=$("speed2"),size2=$("size2");
-  var running=false,recording=false,pos=0,last=0,raf=0,wake=null,cdTimer=0,stream=null,mr=null,chunks=[],facing="user",t0=0,tt=0,blob=null,mime="";
+  var running=false,recording=false,pos=0,last=0,raf=0,wake=null,cdTimer=0,stream=null,mr=null,chunks=[],facing="user",t0=0,tt=0,blob=null,mime="",stopReason="";
 
   try{var c=document.createElement("canvas");c.width=c.height=180;var x=c.getContext("2d");x.fillStyle="#e5322d";x.fillRect(0,0,180,180);x.fillStyle="#fff";x.beginPath();x.arc(90,90,52,0,7);x.fill();x.fillStyle="#e5322d";x.beginPath();x.arc(90,90,34,0,7);x.fill();$("icon").href=c.toDataURL("image/png")}catch(e){}
 
@@ -112,16 +112,16 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   function applySize(){text.style.fontSize=size2.value+"px"}
   function lock(){try{if(navigator.wakeLock)navigator.wakeLock.request("screen").then(function(w){wake=w}).catch(function(){})}catch(e){}}
   function unlock(){try{if(wake){wake.release();wake=null}}catch(e){}}
-  document.addEventListener("visibilitychange",function(){if(stage.classList.contains("on")&&document.visibilityState==="visible")lock()});
+  document.addEventListener("visibilitychange",function(){if(document.hidden&&recording)stopReason="the page was sent to the background";if(stage.classList.contains("on")&&document.visibilityState==="visible")lock()});
 
   function setRun(r){running=r;cancelAnimationFrame(raf);if(r){pos=view.scrollTop;last=performance.now();raf=requestAnimationFrame(tick)}}
-  function tick(t){var dt=Math.min(.1,(t-last)/1000);last=t;pos+=+speed2.value*10*dt;view.scrollTop=pos;if(view.scrollTop<pos-2){setRun(false);return}raf=requestAnimationFrame(tick)}
+  function tick(t){var dt=Math.min(.1,(t-last)/1000);last=t;pos+=+speed2.value*10*dt;view.scrollTop=pos;if(view.scrollTop<pos-2){setRun(false);if(recording){msg.textContent="End of script. Still recording. Tap the red button to stop.";msg.style.display="block"}return}raf=requestAnimationFrame(tick)}
 
   function startCam(){
     stopCam();msg.style.display="none";
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){noCam("This browser can’t open the camera. The prompter still scrolls.");return Promise.resolve()}
     return navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1080},height:{ideal:1920}},audio:true}).then(function(s){
-      stream=s;cam.srcObject=s;cam.classList.toggle("front",facing==="user");cam.style.display="block"
+      stream=s;cam.srcObject=s;s.getTracks().forEach(function(t){t.onended=function(){if(recording){stopReason="the camera or microphone was interrupted (another app, a call, or the screen turning off)";stopRec()}}});cam.classList.toggle("front",facing==="user");cam.style.display="block"
     }).catch(function(e){noCam(why(e));permFail(e)})
   }
   function noCam(m){cam.style.display="none";msg.textContent=m;msg.style.display="block"}
@@ -132,15 +132,15 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
     if(stream&&window.MediaRecorder){
       chunks=[];mime=pickMime();
       try{mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}catch(e){mr=null}
-      if(mr){mr.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};mr.onstop=showResult;mr.start()}
+      if(mr){mr.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};mr.onstop=showResult;mr.onerror=function(){stopReason="the recorder reported an error"};mr.start(1000)}
     }
-    recording=true;stage.classList.add("rec");t0=Date.now();tt=setInterval(function(){var s=Math.floor((Date.now()-t0)/1000);$("time").textContent=Math.floor(s/60)+":"+("0"+s%60).slice(-2)},500);$("time").textContent="0:00";
+    recording=true;stopReason="";msg.style.display="none";lock();stage.classList.add("rec");t0=Date.now();tt=setInterval(function(){var s=Math.floor((Date.now()-t0)/1000);$("time").textContent=Math.floor(s/60)+":"+("0"+s%60).slice(-2)},500);$("time").textContent="0:00";
     setRun(true)
   }
-  function stopRec(){recording=false;stage.classList.remove("rec");clearInterval(tt);$("time").textContent="";setRun(false);if(mr&&mr.state!=="inactive")mr.stop()}
+  function stopRec(){msg.style.display="none";recording=false;stage.classList.remove("rec");clearInterval(tt);$("time").textContent="";setRun(false);if(mr&&mr.state!=="inactive")mr.stop()}
   function showResult(){
     blob=new Blob(chunks,{type:mr.mimeType||mime||"video/webm"});
-    $("rv").src=URL.createObjectURL(blob);$("result").classList.add("on")
+    $("note").textContent=stopReason?("Recording stopped early because "+stopReason+". Your video up to that point is below."):"";$("rv").src=URL.createObjectURL(blob);$("result").classList.add("on")
   }
   function startCountdown(){
     if(!count3.checked){startRec();return}
