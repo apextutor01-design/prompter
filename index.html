@@ -65,7 +65,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   <textarea id="script" aria-label="Your script" placeholder="Paste or type your script here. Line breaks are kept, so use them to mark where you pause."></textarea>
   <div class="row"><span id="meta">0 words</span><button class="link" id="clear">Clear script</button></div>
   <div class="opts">
-    <label for="speed">Speed</label><input id="speed" type="range" min="1" max="20" value="6">
+    <label for="speed">Speed <b id="spv"></b></label><input id="speed" type="range" min="60" max="220" step="5" value="130">
     <label for="size">Text size</label><input id="size" type="range" min="20" max="80" value="34">
     <label class="chk"><input id="mirror" type="checkbox"> Mirror text </label>
     <label class="chk"><input id="count3" type="checkbox" checked> 3-second countdown</label>
@@ -79,7 +79,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   <div id="msg"></div>
   <div id="count"></div>
   <div id="bar">
-    <div class="ctrl opt"><span>Speed</span><input id="speed2" type="range" min="1" max="20"></div>
+    <div class="ctrl opt"><button class="pill" id="sm" aria-label="Slower">−</button><input id="speed2" type="range" min="60" max="220" step="5"><button class="pill" id="sp" aria-label="Faster">+</button><span id="sv2" style="min-width:105px;text-align:right"></span></div>
     <div class="ctrl opt"><span>Size</span><input id="size2" type="range" min="20" max="80"></div>
     <div class="main-row">
       <button class="pill opt" id="back">Edit script</button>
@@ -98,13 +98,13 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   var script=$("script"),speed=$("speed"),size=$("size"),mirror=$("mirror"),count3=$("count3"),go=$("go");
   var stage=$("stage"),view=$("view"),text=$("text"),cam=$("cam"),rec=$("rec"),count=$("count"),msg=$("msg");
   var speed2=$("speed2"),size2=$("size2");
-  var running=false,recording=false,pos=0,last=0,raf=0,wake=null,cdTimer=0,stream=null,mr=null,chunks=[],facing="user",t0=0,tt=0,blob=null,mime="",stopReason="";
+  var running=false,recording=false,pos=0,last=0,raf=0,wake=null,cdTimer=0,stream=null,mr=null,chunks=[],facing="user",t0=0,tt=0,blob=null,mime="",stopReason="",pps=60;
 
   try{var c=document.createElement("canvas");c.width=c.height=180;var x=c.getContext("2d");x.fillStyle="#e5322d";x.fillRect(0,0,180,180);x.fillStyle="#fff";x.beginPath();x.arc(90,90,52,0,7);x.fill();x.fillStyle="#e5322d";x.beginPath();x.arc(90,90,34,0,7);x.fill();$("icon").href=c.toDataURL("image/png")}catch(e){}
 
-  function load(){try{var s=JSON.parse(localStorage.getItem("prompter2")||"null");if(s){script.value=s.t||"";speed.value=s.sp||6;size.value=s.sz||34;mirror.checked=!!s.m;count3.checked=s.c!==false}}catch(e){}}
+  function load(){try{var s=JSON.parse(localStorage.getItem("prompter2")||"null");if(s){script.value=s.t||"";speed.value=(s.sp>=60?s.sp:130);size.value=s.sz||34;mirror.checked=!!s.m;count3.checked=s.c!==false}}catch(e){}}
   function save(){try{localStorage.setItem("prompter2",JSON.stringify({t:script.value,sp:+speed.value,sz:+size.value,m:mirror.checked,c:count3.checked}))}catch(e){}}
-  function meta(){var w=script.value.trim()?script.value.trim().split(/\s+/).length:0;var m=Math.max(1,Math.round(w/150));$("meta").textContent=w+" words"+(w?", about "+m+" min at a calm pace":"");go.disabled=!w}
+  function meta(){$("spv").textContent=speed.value+" wpm";var w=script.value.trim()?script.value.trim().split(/\s+/).length:0;var m=Math.max(1,Math.round(w/150));$("meta").textContent=w+" words"+(w?", about "+m+" min at a calm pace":"");go.disabled=!w}
   $("edit").addEventListener("input",function(){meta();save()});
   $("edit").addEventListener("change",function(){meta();save()});
   $("clear").onclick=function(){if(!script.value||confirm("Clear the whole script?")){script.value="";meta();save();script.focus()}};
@@ -114,32 +114,33 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
   function unlock(){try{if(wake){wake.release();wake=null}}catch(e){}}
   document.addEventListener("visibilitychange",function(){if(document.hidden&&recording)stopReason="the page was sent to the background";if(stage.classList.contains("on")&&document.visibilityState==="visible")lock()});
 
-  function setRun(r){running=r;cancelAnimationFrame(raf);if(r){pos=view.scrollTop;last=performance.now();raf=requestAnimationFrame(tick)}}
-  function tick(t){var dt=Math.min(.1,(t-last)/1000);last=t;pos+=+speed2.value*10*dt;view.scrollTop=pos;if(view.scrollTop<pos-2){setRun(false);if(recording){msg.textContent="End of script. Still recording. Tap the red button to stop.";msg.style.display="block"}return}raf=requestAnimationFrame(tick)}
+  function calcPps(){var n=script.value.trim().split(/\s+/).length||1;var cs=getComputedStyle(text);var dist=Math.max(60,text.scrollHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom));var secs=n/(+speed2.value||130)*60;pps=dist/secs;$("sv2").textContent=speed2.value+" wpm · "+Math.floor(secs/60)+":"+("0"+Math.round(secs%60)).slice(-2)}
+  function setRun(r){running=r;cancelAnimationFrame(raf);if(r){calcPps();pos=view.scrollTop;last=performance.now();raf=requestAnimationFrame(tick)}}
+  function tick(t){var dt=Math.min(.1,(t-last)/1000);last=t;pos+=pps*dt;view.scrollTop=pos;if(view.scrollTop<pos-2){setRun(false);if(recording){msg.textContent="End of script. Still recording. Tap the red button to stop.";msg.style.display="block"}return}raf=requestAnimationFrame(tick)}
 
   function startCam(){
     stopCam();msg.style.display="none";
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){noCam("This browser can’t open the camera. The prompter still scrolls.");return Promise.resolve()}
-    return navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1080},height:{ideal:1920}},audio:true}).then(function(s){
+    return navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:720},height:{ideal:1280}},audio:true}).then(function(s){
       stream=s;cam.srcObject=s;s.getTracks().forEach(function(t){t.onended=function(){if(recording){stopReason="the camera or microphone was interrupted (another app, a call, or the screen turning off)";stopRec()}}});cam.classList.toggle("front",facing==="user");cam.style.display="block"
     }).catch(function(e){noCam(why(e));permFail(e)})
   }
   function noCam(m){cam.style.display="none";msg.textContent=m;msg.style.display="block"}
   function stopCam(){if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}cam.srcObject=null}
 
-  function pickMime(){var l=["video/mp4","video/webm;codecs=vp9,opus","video/webm"];for(var i=0;i<l.length;i++){try{if(MediaRecorder.isTypeSupported(l[i]))return l[i]}catch(e){}}return""}
+  function pickMime(){var l=["video/webm;codecs=vp8,opus","video/webm","video/mp4"];for(var i=0;i<l.length;i++){try{if(MediaRecorder.isTypeSupported(l[i]))return l[i]}catch(e){}}return""}
   function startRec(){
     if(stream&&window.MediaRecorder){
       chunks=[];mime=pickMime();
-      try{mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}catch(e){mr=null}
-      if(mr){mr.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};mr.onstop=showResult;mr.onerror=function(){stopReason="the recorder reported an error"};mr.start(1000)}
+      try{mr=mime?new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000}):new MediaRecorder(stream)}catch(e){mr=null}
+      if(mr){mr.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};mr.onpause=function(){try{mr.resume()}catch(e){}};mr.onstop=function(){if(recording){stopReason=stopReason||"the recorder stopped by itself";recording=false;stage.classList.remove("rec");clearInterval(tt);setRun(false)}showResult()};mr.onerror=function(){stopReason="the recorder reported an error"};mr.start(1000)}
     }
     recording=true;stopReason="";msg.style.display="none";lock();stage.classList.add("rec");t0=Date.now();tt=setInterval(function(){var s=Math.floor((Date.now()-t0)/1000);$("time").textContent=Math.floor(s/60)+":"+("0"+s%60).slice(-2)},500);$("time").textContent="0:00";
     setRun(true)
   }
-  function stopRec(){msg.style.display="none";recording=false;stage.classList.remove("rec");clearInterval(tt);$("time").textContent="";setRun(false);if(mr&&mr.state!=="inactive")mr.stop()}
+  function stopRec(){msg.style.display="none";recording=false;stage.classList.remove("rec");clearInterval(tt);$("time").textContent="";setRun(false);if(mr&&mr.state!=="inactive")mr.stop();else if(mr)showResult()}
   function showResult(){
-    blob=new Blob(chunks,{type:mr.mimeType||mime||"video/webm"});
+    if(!chunks.length&&!stopReason)stopReason="no video data was captured";blob=new Blob(chunks,{type:mr.mimeType||mime||"video/webm"});
     $("note").textContent=stopReason?("Recording stopped early because "+stopReason+". Your video up to that point is below."):"";$("rv").src=URL.createObjectURL(blob);$("result").classList.add("on")
   }
   function startCountdown(){
@@ -159,7 +160,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
 
   go.onclick=function(){
     text.textContent=script.value;speed2.value=speed.value;size2.value=size.value;applySize();
-    stage.classList.toggle("mirror",mirror.checked);stage.classList.add("on");view.scrollTop=0;pos=0;lock();
+    stage.classList.toggle("mirror",mirror.checked);stage.classList.add("on");view.scrollTop=0;pos=0;calcPps();lock();
     facing="user";startCam()
   };
   function leave(){cancelCountdown();if(recording){stopRec()}setRun(false);stopCam();unlock();$("result").classList.remove("on");stage.classList.remove("on");speed.value=speed2.value;size.value=size2.value;save()}
@@ -171,7 +172,7 @@ h1 i{width:12px;height:12px;border-radius:50%;background:var(--rec);display:inli
     if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f]}).catch(function(){})}
     else{var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=f.name;document.body.appendChild(a);a.click();a.remove()}
   };
-  speed2.oninput=function(){};size2.oninput=applySize;
+  speed2.oninput=calcPps;size2.oninput=function(){applySize();calcPps()};$("sm").onclick=function(){speed2.value=Math.max(60,+speed2.value-5);calcPps()};$("sp").onclick=function(){speed2.value=Math.min(220,+speed2.value+5);calcPps()};
   var perm=$("perm");
   function permOk(){perm.style.display="none"}
   function permBad(){perm.style.display="flex";perm.classList.add("bad");$("permMsg").textContent="Access was blocked. Open your browser’s site settings, allow Camera and Microphone for this page, then tap Allow access again."}
